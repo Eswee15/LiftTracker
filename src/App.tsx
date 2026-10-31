@@ -7,6 +7,7 @@ import ExerciseScreen from './pages/ExerciseScreen';
 import { ProgramEditor, Programs } from './pages/Programs';
 import Library from './pages/Library';
 import Settings from './pages/Settings';
+import { DialogHost } from './components/dialogs';
 
 const icon = (d: string) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
@@ -49,6 +50,7 @@ export default function App() {
           ))}
         </nav>
       </div>
+      <DialogHost />
     </HashRouter>
   );
 }

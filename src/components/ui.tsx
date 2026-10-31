@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Equipment, type Exercise } from '../db';
 import { MUSCLES } from '../seed';
+import { alertDialog, confirmDialog } from './dialogs';
 
 export const Check = ({ on }: { on: boolean }) => (
   <span className={'check' + (on ? ' on' : '')}>
@@ -23,22 +24,25 @@ export function Sheet({ title, onClose, children }: { title?: string; onClose: (
 }
 
 /** Numeric input with big +/- buttons. */
-export function Stepper({ value, onChange, step, label, min = 0 }: { value: number; onChange: (v: number) => void; step: number; label: string; min?: number }) {
+export function Stepper({ value, onChange, step, label, min = 0, error }: { value: number; onChange: (v: number) => void; step: number; label: string; min?: number; error?: string | null }) {
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
   const bump = (d: number) => onChange(Math.max(min, Math.round((value + d) * 100) / 100));
   return (
+    <div>
     <div className="stepper">
       <button onClick={() => bump(-step)} aria-label={`decrease ${label}`}>−</button>
       <div className="mid">
         <input
           type="number" inputMode="decimal" value={text}
-          onChange={(e) => { setText(e.target.value); const n = parseFloat(e.target.value); if (!isNaN(n)) onChange(Math.max(min, n)); }}
+          onChange={(e) => { setText(e.target.value); const n = parseFloat(e.target.value); if (!isNaN(n)) onChange(n); }}
           onFocus={(e) => e.target.select()}
         />
         <small>{label}</small>
       </div>
       <button onClick={() => bump(step)} aria-label={`increase ${label}`}>+</button>
+    </div>
+    {error && <div className="err" role="alert">{error}</div>}
     </div>
   );
 }
@@ -92,10 +96,16 @@ export function ExerciseForm({ initial, onClose, onSaved }: { initial?: Partial<
   const [increment, setIncrement] = useState(initial?.increment ?? 2.5);
   const [venueSpecific, setVenueSpecific] = useState(initial?.venueSpecific ?? false);
   const [touchedVenue, setTouchedVenue] = useState(initial?.id !== undefined);
+  const [error, setError] = useState('');
   const toggle = (list: string[], set: (v: string[]) => void, m: string) => set(list.includes(m) ? list.filter((x) => x !== m) : [...list, m]);
 
   async function save() {
-    const row = { name: name.trim(), muscles, secondary: secondary.filter((m) => !muscles.includes(m)), equipment, increment: increment || 2.5, venueSpecific, custom: initial?.custom ?? true };
+    const trimmed = name.trim();
+    if (!trimmed) return setError('Name required');
+    if (!muscles.length) return setError('Pick at least one primary muscle');
+    const dup = (await db.exercises.toArray()).find((e) => e.id !== initial?.id && e.name.trim().toLowerCase() === trimmed.toLowerCase());
+    if (dup) return setError(`“${dup.name}” already exists`);
+    const row = { name: trimmed, muscles, secondary: secondary.filter((m) => !muscles.includes(m)), equipment, increment: increment || 2.5, venueSpecific, custom: initial?.custom ?? true };
     const id = initial?.id ? (await db.exercises.update(initial.id, row), initial.id) : ((await db.exercises.add(row)) as number);
     onSaved?.(id);
     onClose();
@@ -104,7 +114,7 @@ export function ExerciseForm({ initial, onClose, onSaved }: { initial?: Partial<
   return (
     <Sheet title={initial?.id ? 'Edit exercise' : 'New exercise'} onClose={onClose}>
       <label className="f" style={{ marginTop: 0 }}>Name</label>
-      <input type="text" value={name} onChange={(e) => setName(e.target.value)} />
+      <input type="text" value={name} onChange={(e) => { setName(e.target.value); setError(''); }} />
       <label className="f">Equipment</label>
       <div className="chips">
         {EQUIPMENT.map((eq) => (
@@ -113,7 +123,7 @@ export function ExerciseForm({ initial, onClose, onSaved }: { initial?: Partial<
       </div>
       <label className="f">Primary muscles</label>
       <div className="chips">
-        {MUSCLES.map((m) => <button key={m} className={'chip' + (muscles.includes(m) ? ' on' : '')} onClick={() => toggle(muscles, setMuscles, m)}>{m}</button>)}
+        {MUSCLES.map((m) => <button key={m} className={'chip' + (muscles.includes(m) ? ' on' : '')} onClick={() => { toggle(muscles, setMuscles, m); setError(''); }}>{m}</button>)}
       </div>
       <label className="f">Secondary muscles</label>
       <div className="chips">
@@ -131,11 +141,14 @@ export function ExerciseForm({ initial, onClose, onSaved }: { initial?: Partial<
         </div>
         <input type="checkbox" checked={venueSpecific} onChange={(e) => { setVenueSpecific(e.target.checked); setTouchedVenue(true); }} />
       </div>
-      <button className="btn primary block" style={{ marginTop: 18 }} disabled={!name.trim()} onClick={save}>Save</button>
+      {error && <div className="err" role="alert" style={{ marginTop: 14 }}>{error}</div>}
+      <button className="btn primary block" style={{ marginTop: 18 }} onClick={save}>Save</button>
       {initial?.id && (
         <button className="btn ghost danger block" style={{ marginTop: 6, fontSize: 14 }} onClick={async () => {
-          if ((await db.sets.where('exerciseId').equals(initial.id!).count()) > 0) return alert('This exercise has logged sets, so it can’t be deleted.');
-          if (!confirm(`Delete “${initial.name}”?`)) return;
+          if ((await db.sets.where('exerciseId').equals(initial.id!).count()) > 0) return alertDialog('This exercise has logged sets, so it can’t be deleted.');
+          const used = (await db.programs.toArray()).filter((p) => p.days.some((d) => d.items.some((it) => it.exerciseId === initial.id)));
+          if (used.length) return alertDialog(`This exercise is used in ${used.map((p) => `“${p.name}”`).join(', ')}. Remove it from the program first.`);
+          if (!(await confirmDialog(`Delete “${initial.name}”?`))) return;
           await db.exercises.delete(initial.id!);
           onClose();
         }}>Delete exercise</button>

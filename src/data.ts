@@ -33,8 +33,10 @@ export async function startWorkout(date: string, programId?: number, dayId?: str
   if (programId && dayId) {
     const day = (await db.programs.get(programId))?.days.find((d) => d.id === dayId);
     if (day) {
+      // Skip exercises that no longer exist (e.g. deleted before programs were protected).
+      const known = new Set((await db.exercises.toArray()).map((e) => e.id));
       await db.workoutExercises.bulkAdd(
-        day.items.map((it, i) => ({
+        day.items.filter((it) => known.has(it.exerciseId)).map((it, i) => ({
           workoutId: wid, exerciseId: it.exerciseId, order: i, superset: it.superset,
           done: false, targetSets: it.sets, targetReps: it.reps,
         })),

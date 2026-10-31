@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { db, type SetLog } from '../db';
 import { historyFor, logSet, sessionStats, setWorkoutVenue, type Session } from '../data';
-import { e1rm, fmtDate, fmtDur, fmtWeight, parseDate } from '../lib';
+import { e1rm, fmtDate, fmtDur, fmtWeight, parseDate, repsError, weightError } from '../lib';
 import { Check, ExerciseForm, Stepper, useTick } from '../components/ui';
 import { VenueSheet } from './Settings';
 
@@ -30,10 +30,10 @@ export default function ExerciseScreen() {
   // Re-run when sets change anywhere for this exercise or the venue changes.
   const setCount = useLiveQuery(() => db.sets.where('exerciseId').equals(exerciseId).count(), [exerciseId]);
   const history = useLiveQuery(
-    () => (exerciseId ? historyFor(exerciseId, effScope, venueId) : []),
+    () => (exerciseId ? historyFor(exerciseId, effScope, venueId) : undefined),
     [exerciseId, effScope, venueId, setCount],
   );
-  const todaySets = useLiveQuery(() => db.sets.where({ workoutId, exerciseId }).sortBy('at'), [workoutId, exerciseId]);
+  const todaySets = useLiveQuery(async () => (exerciseId ? await db.sets.where({ workoutId, exerciseId }).sortBy('at') : undefined), [workoutId, exerciseId]);
 
   const past = useMemo(() => (history ?? []).filter((s) => s.workout.id !== workoutId), [history, workoutId]);
   const lastSession = past[0];
@@ -67,7 +67,9 @@ export default function ExerciseScreen() {
   const lastSet = todaySets?.[todaySets.length - 1];
   const sinceSet = lastSet ? (Date.now() - lastSet.at) / 1000 : 0;
 
+  const wErr = weightError(weight), rErr = repsError(reps);
   async function submit() {
+    if (wErr || rErr) return;
     if (selected) {
       await db.sets.update(selected, { weight, reps });
       setSelected(null);
@@ -126,10 +128,10 @@ export default function ExerciseScreen() {
           {lastSet && sinceSet < 3600 && (
             <div className="restbar"><span className="sub">Rest</span><span className="timer" style={{ fontSize: 26 }}>{fmtDur(sinceSet)}</span></div>
           )}
-          <Stepper label="kg" value={weight} onChange={setWeight} step={step} />
-          <Stepper label="reps" value={reps} onChange={setReps} step={1} min={1} />
+          <Stepper label="kg" value={weight} onChange={setWeight} step={step} error={wErr} />
+          <Stepper label="reps" value={reps} onChange={setReps} step={1} min={1} error={rErr} />
           <div className="row">
-            <button className="btn primary block grow" onClick={submit} disabled={reps < 1}>{selected ? 'Update set' : 'Log set'}</button>
+            <button className="btn primary block grow" onClick={submit} disabled={!!(wErr || rErr)}>{selected ? 'Update set' : 'Log set'}</button>
             {selected && (
               <>
                 <button className="btn" onClick={() => setSelected(null)}>Cancel</button>

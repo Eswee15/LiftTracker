@@ -6,6 +6,7 @@ import { addExerciseToWorkout, nextPlanDay, removeWorkoutExercise, setWorkoutVen
 import { addDays, fmtDate, fmtDur, isoDate } from '../lib';
 import { Check, ExercisePicker, Sheet, useTick } from '../components/ui';
 import { VenueSheet } from './Settings';
+import { alertDialog, confirmDialog } from '../components/dialogs';
 
 export default function Today() {
   const nav = useNavigate();
@@ -137,7 +138,7 @@ export default function Today() {
         )}
         <button className="btn block" onClick={() => setPicker({ mode: 'add' })}>+ Add exercise</button>
         <button className="btn ghost danger" onClick={async () => {
-          if (!confirm('Delete this whole workout and its sets?')) return;
+          if (!(await confirmDialog('Delete this whole workout and its sets?'))) return;
           await db.transaction('rw', db.workouts, db.workoutExercises, db.sets, async () => {
             await db.sets.where('workoutId').equals(workout.id!).delete();
             await db.workoutExercises.where('workoutId').equals(workout.id!).delete();
@@ -157,7 +158,7 @@ export default function Today() {
               if (picker.mode === 'add') await addExerciseToWorkout(workout.id!, id);
               else await swapExercise(picker.we, id);
               setPicker(null);
-            } catch (e) { alert((e as Error).message); setPicker(null); }
+            } catch (e) { await alertDialog((e as Error).message); setPicker(null); }
           }}
         />
       )}

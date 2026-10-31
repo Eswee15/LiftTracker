@@ -34,3 +34,21 @@ export function fmtDur(sec: number): string {
 /** Epley estimated one-rep max. */
 export const e1rm = (w: number, r: number) => (r <= 1 ? w : w * (1 + r / 30));
 export const uid = () => Math.random().toString(36).slice(2, 10);
+
+export const MAX_WEIGHT = 1000;
+export const MAX_REPS = 100;
+/** Why a typed weight can't be logged, or null when it is fine. */
+export function weightError(w: number): string | null {
+  if (!Number.isFinite(w)) return 'Enter a weight';
+  if (w < 0) return 'Weight can’t be negative';
+  if (w > MAX_WEIGHT) return `Max ${MAX_WEIGHT} kg`;
+  return null;
+}
+/** Why a typed rep count can't be logged, or null when it is fine. */
+export function repsError(r: number): string | null {
+  if (!Number.isFinite(r)) return 'Enter the reps';
+  if (!Number.isInteger(r)) return 'Whole reps only';
+  if (r < 1) return 'At least 1 rep';
+  if (r > MAX_REPS) return `Max ${MAX_REPS} reps`;
+  return null;
+}

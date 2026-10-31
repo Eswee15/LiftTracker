@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type PlanDay, type Program } from '../db';
 import { daysBetween, isoDate, uid } from '../lib';
 import { ExercisePicker } from '../components/ui';
+import { confirmDialog, promptDialog } from '../components/dialogs';
 
 export function Programs() {
   const nav = useNavigate();
@@ -11,7 +12,7 @@ export function Programs() {
   const days = (p: Program) => `${p.days.length} day${p.days.length === 1 ? '' : 's'}`;
 
   async function create() {
-    const name = prompt('Program name', 'Push / Pull / Legs');
+    const name = await promptDialog('Program name', 'Push / Pull / Legs');
     if (!name?.trim()) return;
     const first = (await db.programs.count()) === 0;
     const id = await db.programs.add({ name: name.trim(), days: [], active: first ? 1 : 0, startDate: isoDate() });
@@ -87,7 +88,7 @@ export function ProgramEditor() {
               return (
                 <div key={i} className={linkedNext || linkedPrev ? 'ss' : ''} style={{ padding: '8px 0 8px 0', borderBottom: '1px solid var(--line)' }}>
                   <div className="row">
-                    <div className="grow">{exercises?.get(it.exerciseId)?.name ?? '…'}</div>
+                    <div className="grow">{exercises?.get(it.exerciseId)?.name ?? (exercises ? 'Deleted exercise (remove it)' : '…')}</div>
                     <input type="number" inputMode="numeric" value={it.sets} style={{ width: 56, padding: 8, textAlign: 'center' }} onChange={(e) => editDay(day.id, (d) => (d.items[i].sets = Number(e.target.value)))} />
                     <span className="sub">×</span>
                     <input type="text" value={it.reps} style={{ width: 70, padding: 8, textAlign: 'center' }} onChange={(e) => editDay(day.id, (d) => (d.items[i].reps = e.target.value))} />
@@ -112,13 +113,13 @@ export function ProgramEditor() {
               <button className="btn small" onClick={() => setPickFor(day.id)}>+ Exercise</button>
               <button className="btn small" onClick={() => edit((p) => { const c = structuredClone(day); c.id = uid(); c.name += ' (copy)'; p.days.splice(di + 1, 0, c); return p; })}>Duplicate day</button>
               <span className="grow" />
-              <button className="btn small danger" onClick={() => confirm(`Delete “${day.name}”?`) && edit((p) => { p.days.splice(di, 1); return p; })}>Delete day</button>
+              <button className="btn small danger" onClick={async () => (await confirmDialog(`Delete “${day.name}”?`)) && edit((p) => { p.days.splice(di, 1); return p; })}>Delete day</button>
             </div>
           </div>
         ))}
         <button className="btn block" onClick={() => edit((p) => { p.days.push({ id: uid(), name: `Day ${p.days.length + 1}`, items: [] }); return p; })}>+ Add day</button>
         <button className="btn ghost danger" onClick={async () => {
-          if (!confirm(`Delete program “${prog.name}”? Logged workouts are kept.`)) return;
+          if (!(await confirmDialog(`Delete program “${prog.name}”? Logged workouts are kept.`))) return;
           dirty.current = false; await db.programs.delete(prog.id!); nav('/programs');
         }}>Delete program</button>
       </div>

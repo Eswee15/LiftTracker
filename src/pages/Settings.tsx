@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getSetting, setSetting } from '../db';
 import { exportBackup, importBackup, importFitNotes } from '../data';
 import { Sheet } from '../components/ui';
+import { alertDialog, confirmDialog, promptDialog } from '../components/dialogs';
 
 /** Pick (or add) the venue you are training at. */
 export function VenueSheet({ currentId, onPick, onClose }: { currentId?: number; onPick: (id: number) => void; onClose: () => void }) {
@@ -32,6 +33,8 @@ export default function Settings() {
   const [fnVenue, setFnVenue] = useState<number | ''>('');
   const restoreRef = useRef<HTMLInputElement>(null);
   const fnRef = useRef<HTMLInputElement>(null);
+  // Results are shown at the top of the page; bring them into view.
+  useEffect(() => { if (msg) window.scrollTo({ top: 0, behavior: 'smooth' }); }, [msg]);
   const theme = useLiveQuery(() => getSetting<string>('theme', 'dark'), []);
 
   async function backup() {
@@ -52,8 +55,8 @@ export default function Settings() {
   }
   async function restore(f?: File) {
     if (!f) return;
-    if (!confirm('Restoring replaces ALL data on this device with the backup. Continue?')) return;
-    try { await importBackup(await f.text()); setMsg('Backup restored.'); } catch (e) { setMsg((e as Error).message); }
+    if (!(await confirmDialog('Restoring replaces ALL data on this device with the backup. Continue?'))) return;
+    try { await importBackup(await f.text()); setMsg('Backup restored.'); } catch (e) { setMsg(e instanceof SyntaxError ? 'Not a LiftTracker backup file.' : (e as Error).message); }
   }
   async function fitnotes(f?: File) {
     if (!f) return;
@@ -61,6 +64,7 @@ export default function Settings() {
     if (!vid) return;
     try {
       const r = await importFitNotes(await f.text(), vid);
+      if (!r.workouts) return setMsg(`Nothing imported: no valid rows found (${r.skipped} skipped).`);
       setMsg(`Imported ${r.workouts} workouts, ${r.sets} sets (${r.newExercises} new exercises, ${r.skipped} rows skipped).`);
     } catch (e) { setMsg((e as Error).message); }
   }
@@ -79,15 +83,15 @@ export default function Settings() {
         {venues?.map((v) => (
           <div key={v.id} className="set">
             <span className="grow">{v.name}</span>
-            <button className="btn small" onClick={async () => { const n = prompt('Rename venue', v.name); if (n?.trim()) await db.venues.update(v.id!, { name: n.trim() }); }}>Rename</button>
+            <button className="btn small" onClick={async () => { const n = await promptDialog('Rename venue', v.name); if (n?.trim()) await db.venues.update(v.id!, { name: n.trim() }); }}>Rename</button>
             <button className="btn small danger" onClick={async () => {
-              if ((await db.workouts.where('venueId').equals(v.id!).count()) > 0) return alert('This venue has workouts logged against it, so it can’t be deleted. Rename it instead.');
-              if ((venues?.length ?? 0) < 2) return alert('You need at least one venue.');
+              if ((await db.workouts.where('venueId').equals(v.id!).count()) > 0) return alertDialog('This venue has workouts logged against it, so it can’t be deleted. Rename it instead.');
+              if ((venues?.length ?? 0) < 2) return alertDialog('You need at least one venue.');
               await db.venues.delete(v.id!);
             }}>Delete</button>
           </div>
         ))}
-        <button className="btn ghost" onClick={async () => { const n = prompt('New venue name'); if (n?.trim()) await db.venues.add({ name: n.trim(), lastUsed: 0 }); }}>+ Add venue</button>
+        <button className="btn ghost" onClick={async () => { const n = await promptDialog('New venue name'); if (n?.trim()) await db.venues.add({ name: n.trim(), lastUsed: 0 }); }}>+ Add venue</button>
       </div>
 
       <label className="f">Backup</label>
